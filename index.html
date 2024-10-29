@@ -3,32 +3,87 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/clike/clike.min.js"></script>
-    <title>LispBM Editor</title>
+    <title>ESP32 LED Controller</title>
     <style>
-        #terminalOutput {
-            height: 300px;
-            overflow-y: scroll;
-            background-color: black;
-            color: white;
+        button {
             padding: 10px;
-            font-family: monospace;
+            font-size: 16px;
+            margin: 5px;
         }
-        input, button { width: 100%; }
     </style>
 </head>
 <body>
-    <textarea id="code"></textarea>
-    <div id="buttons">
-        <button id="connectBtn">Connect</button>
-        <button id="disconnectBtn" disabled>Disconnect</button>
-    </div>
-    <div id="terminalOutput"></div>
-    <input type="text" id="terminalInput" placeholder="Type command here...">
-    <button id="sendBtn">Send</button>
-    <p id="status">Disconnected</p>
-    <script src="app.js"></script>
+    <h1>ESP32 LED Controller</h1>
+    <p id="status">Status: Disconnected</p>
+    <button id="connectBtn">Connect</button>
+    <button id="ledOnBtn" disabled>Turn LED On</button>
+    <button id="ledOffBtn" disabled>Turn LED Off</button>
+
+    <script>
+        let device;
+        let characteristic;
+
+        // UUIDs for the service and characteristic
+        const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+        const CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+
+        // Select buttons and status text
+        const connectBtn = document.getElementById('connectBtn');
+        const ledOnBtn = document.getElementById('ledOnBtn');
+        const ledOffBtn = document.getElementById('ledOffBtn');
+        const statusText = document.getElementById('status');
+
+        // Connect to the ESP32
+        async function connect() {
+            console.log("Attempting to connect to Bluetooth device...");
+            try {
+                // Request the Bluetooth device
+                device = await navigator.bluetooth.requestDevice({
+                    acceptAllDevices: true,
+                    optionalServices: [SERVICE_UUID]
+                });
+                console.log("Device selected:", device.name);
+
+                // Connect to the GATT server
+                const server = await device.gatt.connect();
+                console.log("Connected to GATT server");
+
+                // Get the service and characteristic
+                const service = await server.getPrimaryService(SERVICE_UUID);
+                console.log("Service retrieved");
+
+                characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+                console.log("Characteristic retrieved");
+
+                // Update the UI
+                statusText.textContent = "Status: Connected";
+                connectBtn.disabled = true;
+                ledOnBtn.disabled = false;
+                ledOffBtn.disabled = false;
+
+                console.log("Connected to device and characteristic.");
+            } catch (error) {
+                console.error("Connection failed", error);
+                statusText.textContent = "Status: Connection failed";
+            }
+        }
+
+        // Send data to the characteristic
+        async function sendData(command) {
+            try {
+                console.log("Sending command:", command);
+                const encoder = new TextEncoder();
+                await characteristic.writeValue(encoder.encode(command));
+                console.log(`Command "${command}" sent successfully`);
+            } catch (error) {
+                console.error("Failed to send data", error);
+            }
+        }
+
+        // Event listeners
+        connectBtn.addEventListener('click', connect);
+        ledOnBtn.addEventListener('click', () => sendData("ON"));
+        ledOffBtn.addEventListener('click', () => sendData("OFF"));
+    </script>
 </body>
 </html>

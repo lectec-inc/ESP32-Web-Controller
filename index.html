@@ -16,6 +16,7 @@
     <h1>ESP32 LED Controller</h1>
     <p id="status">Status: Disconnected</p>
     <button id="connectBtn">Connect</button>
+    <button id="disconnectBtn" disabled>Disconnect</button>
     <button id="ledOnBtn" disabled>Turn LED On</button>
     <button id="ledOffBtn" disabled>Turn LED Off</button>
 
@@ -28,10 +29,12 @@
         const CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
 
         const connectBtn = document.getElementById('connectBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
         const ledOnBtn = document.getElementById('ledOnBtn');
         const ledOffBtn = document.getElementById('ledOffBtn');
         const statusText = document.getElementById('status');
 
+        // Prompt the user for the 4-digit code when the page loads
         window.addEventListener('load', () => {
             deviceCode = prompt("Enter the 4-digit device code (e.g., H2L0):");
 
@@ -67,6 +70,7 @@
 
                 statusText.textContent = "Status: Connected";
                 connectBtn.disabled = true;
+                disconnectBtn.disabled = false;
                 ledOnBtn.disabled = false;
                 ledOffBtn.disabled = false;
 
@@ -74,6 +78,22 @@
             } catch (error) {
                 console.error("Connection failed", error);
                 statusText.textContent = "Status: Connection failed";
+            }
+        }
+
+        async function disconnect() {
+            if (device && device.gatt.connected) {
+                console.log("Disconnecting from device...");
+                await device.gatt.disconnect();
+                console.log("Device disconnected");
+
+                statusText.textContent = "Status: Disconnected";
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+                ledOnBtn.disabled = true;
+                ledOffBtn.disabled = true;
+            } else {
+                console.log("Device is not connected.");
             }
         }
 
@@ -89,6 +109,7 @@
         }
 
         connectBtn.addEventListener('click', connect);
+        disconnectBtn.addEventListener('click', disconnect);
         ledOnBtn.addEventListener('click', () => sendData("ON"));
         ledOffBtn.addEventListener('click', () => sendData("OFF"));
     </script>

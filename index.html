@@ -22,40 +22,49 @@
     <script>
         let device;
         let characteristic;
+        let deviceCode;
 
-        // UUIDs for the service and characteristic
         const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
         const CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
 
-        // Select buttons and status text
         const connectBtn = document.getElementById('connectBtn');
         const ledOnBtn = document.getElementById('ledOnBtn');
         const ledOffBtn = document.getElementById('ledOffBtn');
         const statusText = document.getElementById('status');
 
-        // Connect to the ESP32
+        window.addEventListener('load', () => {
+            deviceCode = prompt("Enter the 4-digit device code (e.g., H2L0):");
+
+            if (!deviceCode || deviceCode.length !== 4) {
+                alert("Please enter a valid 4-digit code. Reload the page to try again.");
+            }
+        });
+
         async function connect() {
-            console.log("Attempting to connect to Bluetooth device...");
+            if (!deviceCode || deviceCode.length !== 4) {
+                alert("Device code is invalid. Reload the page to enter the code again.");
+                return;
+            }
+
+            const deviceName = `Lectec-${deviceCode}`;
+            console.log("Attempting to connect to device with name:", deviceName);
+
             try {
-                // Request the Bluetooth device
                 device = await navigator.bluetooth.requestDevice({
-                    acceptAllDevices: true,
+                    filters: [{ name: deviceName }],
                     optionalServices: [SERVICE_UUID]
                 });
                 console.log("Device selected:", device.name);
 
-                // Connect to the GATT server
                 const server = await device.gatt.connect();
                 console.log("Connected to GATT server");
 
-                // Get the service and characteristic
                 const service = await server.getPrimaryService(SERVICE_UUID);
                 console.log("Service retrieved");
 
                 characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
                 console.log("Characteristic retrieved");
 
-                // Update the UI
                 statusText.textContent = "Status: Connected";
                 connectBtn.disabled = true;
                 ledOnBtn.disabled = false;
@@ -68,7 +77,6 @@
             }
         }
 
-        // Send data to the characteristic
         async function sendData(command) {
             try {
                 console.log("Sending command:", command);
@@ -80,7 +88,6 @@
             }
         }
 
-        // Event listeners
         connectBtn.addEventListener('click', connect);
         ledOnBtn.addEventListener('click', () => sendData("ON"));
         ledOffBtn.addEventListener('click', () => sendData("OFF"));

@@ -1,0 +1,54 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VESC Web Bluetooth App</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding-top: 50px;
+            background-color: #f4f4f9;
+        }
+        #status {
+            margin: 10px;
+            font-weight: bold;
+        }
+        #telemetry {
+            margin-top: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .data-field {
+            margin: 5px 0;
+        }
+        button {
+            padding: 10px 20px;
+            margin-top: 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>VESC Bluetooth Connection</h1>
+    <div id="status">Status: Disconnected</div>
+    <button id="connectBtn">Connect to VESC</button>
+
+    <div id="telemetry">
+        <div class="data-field" id="voltage">Voltage (V): --</div>
+        <div class="data-field" id="current_motor">Motor Current (A): --</div>
+        <div class="data-field" id="current_in">Input Current (A): --</div>
+        <div class="data-field" id="temp_mos">MOS Temperature (°C): --</div>
+        <div class="data-field" id="temp_motor">Motor Temperature (°C): --</div>
+        <div class="data-field" id="rpm">RPM: --</div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

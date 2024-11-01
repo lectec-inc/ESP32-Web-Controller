@@ -1,0 +1,14 @@
+body {
+    font-family: Arial, sans-serif;
+    margin: 20px;
+  }
+  
+  button {
+    margin: 5px;
+  }
+  
+  #status, #firmwareVersion, #voltage, #motorTemp {
+    margin-top: 10px;
+    font-weight: bold;
+  }
+  

@@ -15,12 +15,11 @@
         const statusDisplay = document.getElementById("status");
         let device, server, txCharacteristic, rxCharacteristic;
         let connectionState = 'disconnected';
-        let messageBuffer = [];
 
         // UUIDs for VESC Service and Characteristics
         const VESC_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
         const RX_CHARACTERISTIC_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"; // Used for writing commands
-        const TX_CHARACTERISTIC_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"; // Used for reading data/notifications
+        const TX_CHARACTERISTIC_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"; // Used for reading data
 
         // Function to initiate connection with verbose output
         async function connectToDevice() {
@@ -44,18 +43,23 @@
                 const service = await server.getPrimaryService(VESC_SERVICE_UUID);
                 console.log("UART service obtained successfully");
 
+                // Retrieve and log RX characteristic properties
                 console.log("Retrieving RX characteristic for writing...");
                 rxCharacteristic = await service.getCharacteristic(RX_CHARACTERISTIC_UUID);
-                console.log(`RX characteristic (Write) obtained, UUID: ${RX_CHARACTERISTIC_UUID}`);
+                logCharacteristicProperties(rxCharacteristic, 'RX');
 
+                // Retrieve and log TX characteristic properties
                 console.log("Retrieving TX characteristic for notifications...");
                 txCharacteristic = await service.getCharacteristic(TX_CHARACTERISTIC_UUID);
-                console.log(`TX characteristic (Notify) obtained, UUID: ${TX_CHARACTERISTIC_UUID}`);
+                logCharacteristicProperties(txCharacteristic, 'TX');
 
-                // Enable notifications on TX
-                console.log("Enabling notifications on TX characteristic...");
-                await enableNotifications(txCharacteristic);
-                console.log("Notifications enabled on TX characteristic");
+                // Enable notifications on TX characteristic if supported
+                if (txCharacteristic.properties.notify) {
+                    console.log("Enabling notifications on TX characteristic...");
+                    await enableNotifications(txCharacteristic);
+                } else {
+                    console.error("TX characteristic does not support notifications.");
+                }
 
                 // Directly request firmware version after enabling notifications
                 console.log("Sending firmware version request (COMM_FW_VERSION)...");
@@ -68,12 +72,26 @@
             }
         }
 
+        // Function to log characteristic properties
+        function logCharacteristicProperties(characteristic, label) {
+            console.log(`> ${label} Characteristic UUID:  ${characteristic.uuid}`);
+            console.log(`> Broadcast:            ${characteristic.properties.broadcast}`);
+            console.log(`> Read:                 ${characteristic.properties.read}`);
+            console.log(`> Write w/o response:   ${characteristic.properties.writeWithoutResponse}`);
+            console.log(`> Write:                ${characteristic.properties.write}`);
+            console.log(`> Notify:               ${characteristic.properties.notify}`);
+            console.log(`> Indicate:             ${characteristic.properties.indicate}`);
+            console.log(`> Signed Write:         ${characteristic.properties.authenticatedSignedWrites}`);
+            console.log(`> Queued Write:         ${characteristic.properties.reliableWrite}`);
+            console.log(`> Writable Auxiliaries: ${characteristic.properties.writableAuxiliaries}`);
+        }
+
         // Function to enable notifications on TX characteristic
         async function enableNotifications(characteristic) {
             try {
                 await characteristic.startNotifications();
                 characteristic.addEventListener("characteristicvaluechanged", handleTelemetryData);
-                console.log(`Notifications are now enabled for TX characteristic (UUID: ${TX_CHARACTERISTIC_UUID})`);
+                console.log("Notifications enabled on TX characteristic, continuously listening for data.");
             } catch (error) {
                 console.error("Failed to enable notifications:", error);
             }
@@ -84,7 +102,6 @@
             console.log("Device disconnected from GATT server");
             statusDisplay.textContent = "Status: Disconnected";
             connectionState = 'disconnected';
-            messageBuffer = [];
         }
 
         // Function to send firmware version request with provided packet data
@@ -120,34 +137,11 @@
             console.log("Completed writing all chunks for COMM_FW_VERSION packet.");
         }
 
-        // Buffer incoming data from TX and assemble full messages with verbose output
+        // Log all incoming data without filters or processing
         function handleTelemetryData(event) {
             const value = event.target.value;
-            console.log("Data chunk received from TX characteristic (hex):", Array.from(new Uint8Array(value.buffer)).map(byte => byte.toString(16).padStart(2, '0')).join(' '));
-
-            for (let i = 0; i < value.byteLength; i++) {
-                messageBuffer.push(value.getUint8(i));
-            }
-
-            if (messageBuffer[0] === 0x02 && messageBuffer[messageBuffer.length - 1] === 0x03) {
-                console.log("Full VESC message received (hex):", Array.from(messageBuffer).map(byte => byte.toString(16).padStart(2, '0')).join(' '));
-                processVescMessage(new Uint8Array(messageBuffer));
-                messageBuffer = [];
-            }
-        }
-
-        // Function to process a complete VESC message with verbose output
-        function processVescMessage(message) {
-            const commandID = message[2];
-            if (commandID === 0x00) { // Firmware version command ID
-                const majorVersion = message[3];
-                const minorVersion = message[4];
-                const hardwareType = message[5];
-                const uuid = Array.from(message.slice(6, 12)).map(b => b.toString(16).padStart(2, '0')).join(" ");
-                console.log(`Firmware Version: ${majorVersion}.${minorVersion}, Hardware: ${hardwareType}, UUID: ${uuid}`);
-            } else {
-                console.log("Received other telemetry data:", message);
-            }
+            const data = new Uint8Array(value.buffer);
+            console.log("Raw data received from TX characteristic (hex):", Array.from(data).map(byte => byte.toString(16).padStart(2, '0')).join(' '));
         }
 
         // Attach connect function to button with verbose output

@@ -1,27 +1,24 @@
 const connectBtn = document.getElementById("connectBtn");
 const statusDisplay = document.getElementById("status");
 let device, server, txCharacteristic, rxCharacteristic;
-let firmwareTimeout;
-
-// Connection State Management
 let connectionState = 'disconnected';
-let messageBuffer = []; // Buffer for assembling full messages
+let messageBuffer = [];
 
 // UUIDs for VESC Service and Characteristics
 const VESC_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
-const RX_CHARACTERISTIC_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
-const TX_CHARACTERISTIC_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
+const RX_CHARACTERISTIC_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"; // Used for writing commands
+const TX_CHARACTERISTIC_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"; // Used for reading data/notifications
 
 // Function to initiate connection with verbose output
 async function connectToDevice() {
-    if (connectionState !== 'disconnected') return; // Prevent duplicate connections
+    if (connectionState !== 'disconnected') return;
     console.log("Scanning for VESC device...");
     connectionState = 'connecting';
     try {
         device = await navigator.bluetooth.requestDevice({
             filters: [{ services: [VESC_SERVICE_UUID] }]
         });
-        console.log(`Device found: ${device.name} with ID: ${device.id}`);
+        console.log(`Device found: ${device.name}, ID: ${device.id}`);
 
         device.addEventListener("gattserverdisconnected", handleDisconnection);
         console.log("Attempting to connect to GATT server...");
@@ -32,23 +29,24 @@ async function connectToDevice() {
 
         console.log("Retrieving UART service...");
         const service = await server.getPrimaryService(VESC_SERVICE_UUID);
-        console.log("UART service obtained:", service);
+        console.log("UART service obtained successfully");
 
-        console.log("Retrieving TX characteristic...");
-        txCharacteristic = await service.getCharacteristic(TX_CHARACTERISTIC_UUID);
-        console.log("TX characteristic obtained:", txCharacteristic);
-
-        console.log("Retrieving RX characteristic...");
+        console.log("Retrieving RX characteristic for writing...");
         rxCharacteristic = await service.getCharacteristic(RX_CHARACTERISTIC_UUID);
-        console.log("RX characteristic obtained:", rxCharacteristic);
+        console.log(`RX characteristic (Write) obtained, UUID: ${RX_CHARACTERISTIC_UUID}`);
 
-        // Enable notifications on TX and provide verbose confirmation
+        console.log("Retrieving TX characteristic for notifications...");
+        txCharacteristic = await service.getCharacteristic(TX_CHARACTERISTIC_UUID);
+        console.log(`TX characteristic (Notify) obtained, UUID: ${TX_CHARACTERISTIC_UUID}`);
+
+        // Enable notifications on TX
         console.log("Enabling notifications on TX characteristic...");
         await enableNotifications(txCharacteristic);
-        console.log("Notifications successfully enabled on TX characteristic.");
+        console.log("Notifications enabled on TX characteristic");
 
-        // Directly request firmware version with verbose logging
-        sendCommFWVersion();
+        // Send larger COMM_FW_VERSION request after enabling notifications
+        console.log("Preparing to send extended firmware version request (COMM_FW_VERSION)...");
+        sendExtendedCommFWVersion();
 
     } catch (error) {
         console.error("Connection failed:", error);
@@ -57,61 +55,79 @@ async function connectToDevice() {
     }
 }
 
-// Function to enable notifications on a characteristic with verbose output
+// Function to enable notifications on TX characteristic
 async function enableNotifications(characteristic) {
-    await characteristic.startNotifications();
-    characteristic.addEventListener("characteristicvaluechanged", handleTelemetryData); // Handle data received on TX
-    console.log(`Notifications are now enabled for characteristic: ${characteristic.uuid}`);
+    try {
+        await characteristic.startNotifications();
+        characteristic.addEventListener("characteristicvaluechanged", handleTelemetryData);
+        console.log(`Notifications are now enabled for TX characteristic (UUID: ${TX_CHARACTERISTIC_UUID})`);
+    } catch (error) {
+        console.error("Failed to enable notifications:", error);
+    }
 }
 
-// Function to handle disconnection with verbose output
+// **Define handleDisconnection function to reset state on disconnect**
 function handleDisconnection(event) {
     console.log("Device disconnected from GATT server");
     statusDisplay.textContent = "Status: Disconnected";
     connectionState = 'disconnected';
-    clearTimeout(firmwareTimeout); // Clear firmware timeout on disconnection
-    messageBuffer = []; // Clear buffer on disconnect
+    messageBuffer = [];
 }
 
-// Function to send COMM_FW_VERSION command with verbose output
-function sendCommFWVersion() {
+// Function to send extended COMM_FW_VERSION command
+function sendExtendedCommFWVersion() {
     const startByte = 0x02;
-    const payloadLength = 0x01; // Only the command ID for COMM_FW_VERSION
-    const commandID = 0x00; // COMM_FW_VERSION ID
+    const payloadLength = 42; // 42-byte payload, similar to example
+    const commandID = 0x00; // COMM_FW_VERSION
+    const dummyPayload = new Array(39).fill(0x00); // Fill with dummy data for testing
     const endByte = 0x03;
 
-    // Calculate CRC over the command ID only (simple case)
-    const crc = calculateCRC([commandID]);
+    // Combine command ID with dummy payload
+    const packetData = [commandID, ...dummyPayload];
+    const crc = calculateCRC(packetData);
+    const packet = new Uint8Array([startByte, payloadLength, ...packetData, crc & 0xFF, (crc >> 8) & 0xFF, endByte]);
 
-    const packet = new Uint8Array([startByte, payloadLength, commandID, crc & 0xFF, (crc >> 8) & 0xFF, endByte]);
-    console.log("Sending COMM_FW_VERSION command:", packet);
+    console.log("Preparing packet for extended COMM_FW_VERSION:");
+    console.log(" - Packet data (hex):", Array.from(packet).map(byte => byte.toString(16).padStart(2, '0')).join(' '));
+    console.log(" - Target characteristic: RX (used for writing commands)");
+    console.log(" - Target characteristic UUID:", RX_CHARACTERISTIC_UUID);
+
+    // Write packet in chunks with detailed logging
     writeDataChunkedWithDelay(rxCharacteristic, packet);
 }
 
-// Function to write data in chunks with a 30ms delay and verbose output
+// Function to write data in chunks with detailed output
 async function writeDataChunkedWithDelay(characteristic, data) {
     const chunkSize = 20;
-    for (let i = 0; i < data.length; i += chunkSize) {
-        const chunk = data.slice(i, i + chunkSize);
-        await characteristic.writeValueWithoutResponse(chunk);
-        console.log("Chunk written to RX characteristic:", chunk);
-        await new Promise(resolve => setTimeout(resolve, 30)); // 30ms delay between chunks
+    console.log(`Starting chunked write to characteristic (UUID: ${characteristic.uuid})`);
+
+    try {
+        for (let i = 0; i < data.length; i += chunkSize) {
+            const chunk = data.slice(i, i + chunkSize);
+            console.log(" - Writing chunk to RX characteristic:", Array.from(chunk).map(byte => byte.toString(16).padStart(2, '0')).join(' '));
+            await characteristic.writeValueWithoutResponse(chunk);
+            console.log(" - Chunk written successfully, delaying next write by 30ms...");
+            await new Promise(resolve => setTimeout(resolve, 30));
+        }
+    } catch (error) {
+        console.error("Failed to write data chunk to RX characteristic:", error);
     }
+    console.log("Completed writing all chunks for extended COMM_FW_VERSION packet.");
 }
 
 // Buffer incoming data from TX and assemble full messages with verbose output
 function handleTelemetryData(event) {
     const value = event.target.value;
-    console.log("Data chunk received from TX characteristic:", value);
+    console.log("Data chunk received from TX characteristic (hex):", Array.from(new Uint8Array(value.buffer)).map(byte => byte.toString(16).padStart(2, '0')).join(' '));
+
     for (let i = 0; i < value.byteLength; i++) {
         messageBuffer.push(value.getUint8(i));
     }
 
-    // Check if buffer contains a full VESC message framed by 0x02 and 0x03
     if (messageBuffer[0] === 0x02 && messageBuffer[messageBuffer.length - 1] === 0x03) {
-        console.log("Full VESC message received:", new Uint8Array(messageBuffer));
+        console.log("Full VESC message received (hex):", Array.from(messageBuffer).map(byte => byte.toString(16).padStart(2, '0')).join(' '));
         processVescMessage(new Uint8Array(messageBuffer));
-        messageBuffer = []; // Clear buffer after processing
+        messageBuffer = [];
     }
 }
 
@@ -129,20 +145,16 @@ function processVescMessage(message) {
     }
 }
 
-// Simple CRC calculation function (CRC-16) with verbose output
+// Simple CRC-16 calculation function with detailed output
 function calculateCRC(data) {
     let crc = 0xFFFF;
     data.forEach(byte => {
         crc ^= byte;
         for (let i = 0; i < 8; i++) {
-            if (crc & 1) {
-                crc = (crc >> 1) ^ 0xA001;
-            } else {
-                crc >>= 1;
-            }
+            crc = (crc & 1) ? (crc >> 1) ^ 0xA001 : crc >> 1;
         }
     });
-    console.log(`Calculated CRC for data [${data}]:`, crc);
+    console.log(`Calculated CRC for data [${data}]:`, crc.toString(16));
     return crc;
 }
 
@@ -155,3 +167,6 @@ connectBtn.addEventListener("click", () => {
         connectToDevice();
     }
 });
+</script>
+</body>
+</html>

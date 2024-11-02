@@ -53,19 +53,38 @@ export const COMMANDS = {
   function parseCommFwVersion(data) {
     let index = 0;
     const version = {};
+  
     version.major = data[index++];
     version.minor = data[index++];
   
-    // Extract hardware name
+    // Adjust hardware name start index and find end index correctly
+    index = 2;
     const endOfHardwareName = data.indexOf(0, index);
-    version.hardwareName = new TextDecoder().decode(data.slice(index, endOfHardwareName));
-    index = endOfHardwareName + 1;
+    // console.log("Hardware Name Slice Start:", index, "End:", endOfHardwareName);
   
-    // Skip the next bytes as per the protocol (e.g., UUID, flags)
-    // Adjust index accordingly if needed
+    if (endOfHardwareName > -1) {
+      // Copy the slice into a new Uint8Array, then get its ArrayBuffer
+      const nameBytes = new Uint8Array(data.slice(index, endOfHardwareName));
+      const nameBuffer = nameBytes.buffer;
+      // console.log("Raw Hardware Name Bytes:", nameBytes);
+  
+      // Decode the hardware name
+      version.hardwareName = new TextDecoder().decode(nameBuffer);
+      // console.log("Extracted Hardware Name:", version.hardwareName);
+  
+      index = endOfHardwareName + 1;
+    } else {
+      console.error("Error: Hardware name not null-terminated");
+      version.hardwareName = "";
+    }
   
     return version;
   }
+  
+  
+  
+  
+  
   
   // Parsing function for COMM_GET_VALUES
   function parseCommGetValues(data) {

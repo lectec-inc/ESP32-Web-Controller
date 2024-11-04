@@ -33,7 +33,6 @@ export function constructPacket(commandId, commandData) {
   const endByte = 0x03;
 
   const packet = [startByte, ...lengthBytes, ...payload, ...crcBytes, endByte];
-
   console.log(`Constructed packet: ${packet.map(byte => byte.toString(16).padStart(2, '0')).join(' ')}`);
 
   return packet;

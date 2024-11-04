@@ -36,8 +36,10 @@ async function onConnectButtonClick() {
     // Request firmware version
     await requestFirmwareVersion();
 
+    // Request devices on CAN network
+    await requestCanDevices();
+
     // Start streaming realtime data
-    startRealtimeDataStream();
   } else {
     statusDiv.textContent = 'Status: Failed to connect';
     console.error('Failed to connect to VESC device.');
@@ -63,6 +65,13 @@ function startRealtimeDataStream() {
   }, 500); // Adjust the interval as needed (e.g., 500 ms)
 }
 
+async function requestCanDevices() {
+    console.log('Requesting CAN devices...');
+    const packet = prepareCommand('COMM_PING_CAN');
+    const chunks = fragmentPacket(packet);
+    await sendPacketOverBLE(chunks);
+  }
+
 function onDataReceived(commandId, data) {
   const commandType = Object.keys(COMMANDS).find(key => COMMANDS[key] === commandId);
 
@@ -75,6 +84,11 @@ function onDataReceived(commandId, data) {
     case 'COMM_GET_VALUES':
       console.log('Realtime data received.');
       updateRealtimeData(data);
+      break;
+    
+    case 'COMM_PING_CAN':
+      console.log('CAN device data received.');
+      updateCanDevices(data.deviceIds);
       break;
 
     default:
@@ -98,6 +112,21 @@ function updateRealtimeData(data) {
     motorTempDiv.textContent = `Motor Temperature: ${data.tempMotor.toFixed(2)} °C`;
     console.log(`Motor Temperature: ${data.tempMotor.toFixed(2)} °C`);
   }
+}
+
+function updateCanDevices(deviceIds) {
+    const canDevicesDiv = document.getElementById('canDevices');
+    canDevicesDiv.innerHTML = ''; // Clear previous device list
+
+    if (deviceIds.length === 0) {
+        canDevicesDiv.textContent = 'No CAN devices found.';
+    } else {
+        deviceIds.forEach(id => {
+            const deviceElem = document.createElement('div');
+            deviceElem.textContent = `CAN Device ID: ${id}`;
+            canDevicesDiv.appendChild(deviceElem);
+        });
+    }
 }
 
 export function updateUI(data) {

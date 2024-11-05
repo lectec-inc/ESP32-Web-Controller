@@ -3,6 +3,7 @@
 import { prepareCommand, fragmentPacket, setOnDataReceivedCallback } from './protocol.js';
 import { sendPacketOverBLE, connectToDevice } from './communication.js';
 import { COMMANDS } from './commands.js';
+import { delay } from './utils.js';
 
 let connectButton;
 let statusDiv;
@@ -10,6 +11,9 @@ let firmwareVersionDiv;
 let voltageDiv;
 let motorTempDiv;
 let isConnected = false;
+
+let commandQueue = [];
+let isProcessingQueue = false;
 
 export function initializeUI() {
   connectButton = document.getElementById('connectButton');
@@ -20,6 +24,7 @@ export function initializeUI() {
 
   connectButton.addEventListener('click', onConnectButtonClick);
 
+  // Set the onDataReceivedCallback for handling data responses
   setOnDataReceivedCallback(onDataReceived);
 }
 
@@ -33,19 +38,85 @@ async function onConnectButtonClick() {
     isConnected = true;
     console.log('Connected to VESC device.');
 
-    // Request firmware version
-    await requestFirmwareVersion();
+    // Enqueue commands
+    queueCommand(requestFirmwareVersion, 5);
+    queueCommand(requestCanDevices, 5);
 
-    // Request devices on CAN network
-    await requestCanDevices();
-
-    // Start streaming realtime data
   } else {
     statusDiv.textContent = 'Status: Failed to connect';
     console.error('Failed to connect to VESC device.');
   }
 }
 
+function queueCommand(commandFunc, timeoutSeconds = 5) {
+  commandQueue.push({ commandFunc, timeoutSeconds });
+  processQueue();
+}
+
+async function processQueue() {
+  if (isProcessingQueue || commandQueue.length === 0) return;
+
+  isProcessingQueue = true;
+
+  while (commandQueue.length > 0) {
+    const { commandFunc, timeoutSeconds } = commandQueue.shift();
+
+    // Send the command and wait for a response or timeout
+    const responseReceived = await sendCommandAndWait(commandFunc, timeoutSeconds);
+
+    if (!responseReceived) {
+      console.warn("No response received, moving to the next command.");
+    }
+  }
+
+  isProcessingQueue = false;
+}
+
+async function sendCommandAndWait(commandFunc, timeoutSeconds) {
+  console.log("Sending command...");
+  
+  // Execute the command function (e.g., requestFirmwareVersion, requestCanDevices)
+  commandFunc();
+
+  // Wait for the notification for the specified timeout
+  return waitForNotification(timeoutSeconds);
+}
+
+async function waitForNotification(timeoutSeconds = 5) {
+  console.log(`Waiting for response for up to ${timeoutSeconds} seconds...`);
+  statusDiv.textContent = "Waiting for response...";
+
+  return new Promise((resolve) => {
+    let responseHandled = false;
+
+    // Listen for data within the timeout period
+    const timeoutId = setTimeout(() => {
+      if (!responseHandled) {
+        console.warn("Timeout reached, continuing without response.");
+        statusDiv.textContent = "Response not received, continuing...";
+        resolve(false);
+      }
+    }, timeoutSeconds * 1000);
+
+    // Temporary response handler to update UI for specific commands
+    const handleResponse = (commandId, data) => {
+      responseHandled = true;
+      clearTimeout(timeoutId);
+      console.log("Response received.");
+      statusDiv.textContent = "Response received.";
+
+      // Process and update the UI based on the response command ID
+      onDataReceived(commandId, data);
+
+      resolve(true);
+    };
+
+    // Set the temporary callback
+    setOnDataReceivedCallback(handleResponse);
+  });
+}
+
+// Command functions to send specific requests
 async function requestFirmwareVersion() {
   console.log('Requesting firmware version...');
   const packet = prepareCommand('COMM_FW_VERSION');
@@ -53,24 +124,12 @@ async function requestFirmwareVersion() {
   await sendPacketOverBLE(chunks);
 }
 
-function startRealtimeDataStream() {
-  console.log('Starting realtime data stream...');
-  setInterval(async () => {
-    if (isConnected) {
-      console.log('Requesting realtime data...');
-      const packet = prepareCommand('COMM_GET_VALUES');
-      const chunks = fragmentPacket(packet);
-      await sendPacketOverBLE(chunks);
-    }
-  }, 500); // Adjust the interval as needed (e.g., 500 ms)
-}
-
 async function requestCanDevices() {
-    console.log('Requesting CAN devices...');
-    const packet = prepareCommand('COMM_PING_CAN');
-    const chunks = fragmentPacket(packet);
-    await sendPacketOverBLE(chunks);
-  }
+  console.log('Requesting CAN devices...');
+  const packet = prepareCommand('COMM_PING_CAN');
+  const chunks = fragmentPacket(packet);
+  await sendPacketOverBLE(chunks);
+}
 
 function onDataReceived(commandId, data) {
   const commandType = Object.keys(COMMANDS).find(key => COMMANDS[key] === commandId);

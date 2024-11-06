@@ -142,17 +142,21 @@ function processReceiveBuffer() {
 }
 
 function processPayload(payload) {
-  const commandId = payload[0];
-  const data = payload.slice(1);
-  console.log(`Processing payload for command ID ${commandId}`);
-
-  const parsedData = parseCommandData(commandId, data);
-
-  // Notify UI or other modules
-  if (onDataReceivedCallback) {
-    onDataReceivedCallback(commandId, parsedData);
-  }
+    const commandId = payload[0];
+    const data = payload.length > 1 ? new Uint8Array(payload.slice(1)) : null;  // Ensure Uint8Array
+    console.log(`Processing payload for command ID ${commandId}`);
+  
+    if (data) {
+      const parsedData = parseCommandData(commandId, data);
+      if (onDataReceivedCallback) {
+        onDataReceivedCallback(commandId, parsedData);
+      }
+    } else {
+      console.warn(`No data found for command ID ${commandId}`);
+    }
 }
+
+  
 
 export function setOnDataReceivedCallback(callback) {
   onDataReceivedCallback = callback;

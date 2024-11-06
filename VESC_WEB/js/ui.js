@@ -11,6 +11,10 @@ let firmwareVersionDiv;
 let voltageDiv;
 let motorTempDiv;
 let isConnected = false;
+let accumulatedData = null;   // Buffer to accumulate incoming data
+let totalLength = 0;          // Expected total length of data (set upon receiving first response)
+let offset = 0;               // Current offset for reading
+const chunkSize = 20;         // Size of each chunk to request
 
 let commandQueue = [];
 let isProcessingQueue = false;
@@ -39,8 +43,12 @@ async function onConnectButtonClick() {
     console.log('Connected to VESC device.');
 
     // Enqueue commands
-    queueCommand(requestFirmwareVersion, 5);
-    queueCommand(requestCanDevices, 5);
+    queueCommand(requestFirmwareVersion, 10);
+    queueCommand(requestCanDevices, 10);
+    // Add additional commands here as needed
+    queueCommand(requestLispStats, 5);
+    offset = 0;
+    queueCommand(() => requestLispReadCode(chunkSize, offset), 60);
 
   } else {
     statusDiv.textContent = 'Status: Failed to connect';
@@ -131,6 +139,113 @@ async function requestCanDevices() {
   await sendPacketOverBLE(chunks);
 }
 
+// Additional commands based on your list
+async function requestLispReadCode(len, offset) {
+    console.log(`Requesting LISP Read Code at offset ${offset} with length ${len}...`);
+    const packet = prepareCommand('COMM_LISP_READ_CODE', { len, offset });
+    const chunks = fragmentPacket(packet);
+    await sendPacketOverBLE(chunks);
+  }
+
+async function requestLispWriteCode(offset, data) {
+  console.log('Requesting LISP Write Code...');
+  const packet = prepareCommand('COMM_LISP_WRITE_CODE', { offset, data });
+  const chunks = fragmentPacket(packet);
+  await sendPacketOverBLE(chunks);
+}
+
+async function requestLispEraseCode(eraseSize = -1) {
+  console.log('Requesting LISP Erase Code...');
+  const packet = prepareCommand('COMM_LISP_ERASE_CODE', { eraseSize });
+  const chunks = fragmentPacket(packet);
+  await sendPacketOverBLE(chunks);
+}
+
+async function requestLispSetRunning(running) {
+  console.log('Requesting LISP Set Running...');
+  const packet = prepareCommand('COMM_LISP_SET_RUNNING', { running });
+  const chunks = fragmentPacket(packet);
+  await sendPacketOverBLE(chunks);
+}
+
+async function requestLispGetStats() {
+  console.log('Requesting LISP Get Stats...');
+  const packet = prepareCommand('COMM_LISP_GET_STATS');
+  const chunks = fragmentPacket(packet);
+  await sendPacketOverBLE(chunks);
+}
+
+async function requestLispPrint() {
+  console.log('Requesting LISP Print...');
+  const packet = prepareCommand('COMM_LISP_PRINT');
+  const chunks = fragmentPacket(packet);
+  await sendPacketOverBLE(chunks);
+}
+
+async function requestLispReplCmd(command) {
+  console.log('Requesting LISP REPL Command...');
+  const packet = prepareCommand('COMM_LISP_REPL_CMD', { command });
+  const chunks = fragmentPacket(packet);
+  await sendPacketOverBLE(chunks);
+}
+
+async function requestLispStreamCode(codeChunk) {
+  console.log('Requesting LISP Stream Code...');
+  const packet = prepareCommand('COMM_LISP_STREAM_CODE', { codeChunk });
+  const chunks = fragmentPacket(packet);
+  await sendPacketOverBLE(chunks);
+}
+
+async function requestFileList(path = '', from = '') {
+  console.log('Requesting File List...');
+  const packet = prepareCommand('COMM_FILE_LIST', { path, from });
+  const chunks = fragmentPacket(packet);
+  await sendPacketOverBLE(chunks);
+}
+
+async function requestFileRead(path, offset = 0) {
+  console.log('Requesting File Read...');
+  const packet = prepareCommand('COMM_FILE_READ', { path, offset });
+  const chunks = fragmentPacket(packet);
+  await sendPacketOverBLE(chunks);
+}
+
+async function requestFileWrite(path, offset, data) {
+  console.log('Requesting File Write...');
+  const packet = prepareCommand('COMM_FILE_WRITE', { path, offset, data });
+  const chunks = fragmentPacket(packet);
+  await sendPacketOverBLE(chunks);
+}
+
+async function requestFileMkdir(path) {
+  console.log('Requesting File Mkdir...');
+  const packet = prepareCommand('COMM_FILE_MKDIR', { path });
+  const chunks = fragmentPacket(packet);
+  await sendPacketOverBLE(chunks);
+}
+
+async function requestFileRemove(path) {
+  console.log('Requesting File Remove...');
+  const packet = prepareCommand('COMM_FILE_REMOVE', { path });
+  const chunks = fragmentPacket(packet);
+  await sendPacketOverBLE(chunks);
+}
+
+async function requestLispRmsg() {
+  console.log('Requesting LISP Rmsg...');
+  const packet = prepareCommand('COMM_LISP_RMSG');
+  const chunks = fragmentPacket(packet);
+  await sendPacketOverBLE(chunks);
+}
+
+async function requestLispStats() {
+    console.log('Requesting Lisp Stats...');
+    const packet = prepareCommand('COMM_LISP_GET_STATS');
+    const chunks = fragmentPacket(packet);
+    await sendPacketOverBLE(chunks);
+  }
+  
+
 function onDataReceived(commandId, data) {
   const commandType = Object.keys(COMMANDS).find(key => COMMANDS[key] === commandId);
 
@@ -187,6 +302,34 @@ function updateCanDevices(deviceIds) {
         });
     }
 }
+
+function onLispReadCodeReceived(data) {
+    if (offset === 0) {
+      // On the first packet, set the total length and initialize the buffer
+      totalLength = data.qmlui_len;
+      accumulatedData = new Uint8Array(totalLength);
+    }
+  
+    // Add the current chunk to the accumulatedData buffer at the correct offset
+    accumulatedData.set(data.codeData, data.ofs_qml);
+  
+    // Check if all data has been accumulated
+    if (offset + data.codeData.length >= totalLength) {
+      console.log("All data received. Processing complete data...");
+      processCompleteData(accumulatedData); // Process or decode the entire buffer as needed
+    } else {
+      // Increment offset by chunkSize and request the next chunk
+      offset += chunkSize;
+      requestLispReadCode(chunkSize, offset);
+    }
+}
+  
+
+  function processCompleteData(dataBuffer) {
+    const codeText = new TextDecoder("utf-8").decode(dataBuffer);
+    console.log("Complete LISP Code Data:", codeText);
+    // Further processing as needed...
+  }
 
 export function updateUI(data) {
   // Not used in this simplified example
